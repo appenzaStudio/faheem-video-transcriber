@@ -10,6 +10,9 @@ export default async function handler(req, res) {
     return;
   }
 
+  // Log request for debugging
+  console.log(`[Gemini Proxy] ${req.method} ${req.headers['x-gemini-path']}`);
+
   try {
     // Get the target path from headers
     const geminiPath = req.headers['x-gemini-path'];
