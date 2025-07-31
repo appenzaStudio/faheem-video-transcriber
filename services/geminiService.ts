@@ -77,9 +77,6 @@ async function pollFileState(fileName: string, apiKey: string): Promise<any> {
 async function uploadFileWithRest(file: File, apiKey: string): Promise<any> {
     console.log('Starting file upload with proxied resumable method, size:', file.size, 'bytes');
     console.log('File size in MB:', (file.size / (1024 * 1024)).toFixed(2), 'MB');
-    console.log('File name:', file.name);
-    console.log('File type:', file.type);
-    console.log('File last modified:', new Date(file.lastModified).toISOString());
     
     try {
         // Step 1: Initiate a resumable upload session through proxy
@@ -413,18 +410,7 @@ ${contextSentence}
         
         // For files under 100MB, this might be a different issue
         if (videoFile.size && videoFile.size < 100 * 1024 * 1024) {
-            const fileType = videoFile.type || 'غير محدد';
-            const fileName = videoFile.name || 'غير معروف';
-            
-            // Check if it's a supported video format
-            const supportedFormats = ['video/mp4', 'video/mpeg', 'video/mov', 'video/avi', 'video/x-flv', 'video/mpg', 'video/webm', 'video/wmv', 'video/3gpp'];
-            const isSupported = supportedFormats.includes(fileType.toLowerCase());
-            
-            if (!isSupported && fileType !== 'غير محدد') {
-                throw new Error(`تنسيق الفيديو غير مدعوم (${fileType}). التنسيقات المدعومة: MP4, MOV, AVI, WebM. حاول تحويل الفيديو إلى MP4.`);
-            }
-            
-            throw new Error(`خطأ في رفع الملف (${fileSizeMB} ميجابايت, ${fileType}). قد تكون هناك مشكلة مؤقتة في الخدمة. حاول:\n1. ضغط الفيديو إلى أقل من 50 ميجابايت\n2. تحويله إلى تنسيق MP4\n3. المحاولة مرة أخرى بعد قليل`);
+            throw new Error(`خطأ في رفع الملف (${fileSizeMB} ميجابايت). قد تكون هناك مشكلة مؤقتة في الخدمة أو تنسيق الفيديو غير مدعوم. حاول مرة أخرى أو استخدم تنسيق MP4.`);
         }
         
         throw new Error(`حجم ملف الفيديو كبير جدًا (${fileSizeMB} ميجابايت). الحد الأقصى المدعوم هو حوالي 50 ميجابايت للاستقرار الأمثل. حاول ضغط الفيديو أو استخدام ملف أصغر.`);

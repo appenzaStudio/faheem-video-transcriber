@@ -26,36 +26,19 @@ const FileUploader: React.FC<FileUploaderProps> = ({ onFilesSelect }) => {
     e.stopPropagation();
   }, []);
 
-  const validateFiles = (files: FileList): boolean => {
-    const maxSize = 50 * 1024 * 1024; // 50MB
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
-      if (file.size > maxSize) {
-        const fileSizeMB = (file.size / (1024 * 1024)).toFixed(2);
-        alert(`ملف "${file.name}" كبير جداً (${fileSizeMB} ميجابايت).\nالحد الأقصى المدعوم: 50 ميجابايت.\nحاول ضغط الفيديو أولاً.`);
-        return false;
-      }
-    }
-    return true;
-  };
-
   const handleDrop = useCallback((e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     e.stopPropagation();
     setIsDragging(false);
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      if (validateFiles(e.dataTransfer.files)) {
-        onFilesSelect(e.dataTransfer.files);
-      }
+      onFilesSelect(e.dataTransfer.files);
       e.dataTransfer.clearData();
     }
   }, [onFilesSelect]);
   
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
-      if (validateFiles(e.target.files)) {
-        onFilesSelect(e.target.files);
-      }
+      onFilesSelect(e.target.files);
     }
   };
   
