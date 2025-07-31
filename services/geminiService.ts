@@ -124,10 +124,16 @@ async function uploadFileWithRest(file: File, apiKey: string): Promise<any> {
 
         // Step 2: Upload the file bytes through our proxy
         // Extract the path from the upload URI to proxy it
-        const uploadUrl = new URL(uploadUri);
-        const uploadPath = uploadUrl.pathname + uploadUrl.search;
-        
-        console.log('Uploading file through proxy, path:', uploadPath);
+        let uploadPath;
+        try {
+            const uploadUrl = new URL(uploadUri);
+            uploadPath = uploadUrl.pathname + uploadUrl.search;
+            console.log('Uploading file through proxy, path:', uploadPath);
+        } catch (urlError) {
+            console.error('Failed to parse upload URI:', uploadUri);
+            console.error('URL parse error:', urlError.message);
+            throw new Error(`Invalid upload URI received: ${uploadUri}`);
+        }
         
         const uploadResponse = await makeGeminiRequest(uploadPath, {
             method: 'POST',
@@ -167,7 +173,14 @@ async function uploadFileWithRest(file: File, apiKey: string): Promise<any> {
         return pollFileState(fileName, apiKey);
         
     } catch (error) {
-        console.error('Upload error:', error);
+        console.error('Resumable upload error:', error);
+        
+        // If the error is related to missing Location header, try multipart upload as fallback
+        if (error.message.includes('Failed to get upload URI from server')) {
+            console.log('Falling back to multipart upload method...');
+            return uploadFileWithMultipart(file, apiKey);
+        }
+        
         if (error instanceof TypeError && error.message.includes('Failed to fetch')) {
             throw new Error('Network error during file upload. This might be due to file size or network timeout.');
         }
@@ -175,6 +188,66 @@ async function uploadFileWithRest(file: File, apiKey: string): Promise<any> {
     }
 }
 
+/**
+ * Fallback upload method using multipart upload.
+ * Used when resumable upload fails due to proxy issues.
+ */
+async function uploadFileWithMultipart(file: File, apiKey: string): Promise<any> {
+    console.log('Starting multipart upload fallback, size:', file.size, 'bytes');
+    
+    try {
+        // Create FormData for multipart upload
+        const formData = new FormData();
+        
+        // Add metadata as JSON
+        const metadata = {
+            file: {
+                displayName: file.name,
+                mimeType: file.type
+            }
+        };
+        
+        formData.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
+        formData.append('data', file);
+        
+        // Use multipart upload endpoint
+        const uploadResponse = await makeGeminiRequest('/upload/v1beta/files?uploadType=multipart', {
+            method: 'POST',
+            body: formData, // Don't set Content-Type header, let browser set it with boundary
+        }, apiKey);
+
+        console.log('Multipart upload response status:', uploadResponse.status);
+        
+        if (!uploadResponse.ok) {
+            const errorText = await uploadResponse.text();
+            console.error('Multipart upload failed:', errorText);
+            throw new Error(`Failed to upload file with multipart (${uploadResponse.status}): ${errorText}`);
+        }
+
+        // Get the uploaded file metadata
+        const uploadedFileMetadata = await uploadResponse.json();
+        console.log('Multipart upload response:', uploadedFileMetadata);
+
+        // Poll the file's status until it's 'ACTIVE'
+        if (uploadedFileMetadata?.state === 'ACTIVE') {
+            return uploadedFileMetadata;
+        }
+        
+        const fileName = uploadedFileMetadata.name;
+        if (!fileName) {
+            throw new Error('Failed to get file name from multipart upload response');
+        }
+        
+        return pollFileState(fileName, apiKey);
+        
+    } catch (error) {
+        console.error('Multipart upload error:', error);
+        if (error instanceof TypeError && error.message.includes('Failed to fetch')) {
+            throw new Error('Network error during multipart file upload.');
+        }
+        throw error;
+    }
+}
 
 export const transcribeVideoStream = async (
   videoFile: File,
