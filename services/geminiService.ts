@@ -68,83 +68,100 @@ async function pollFileState(fileName: string, apiKey: string): Promise<any> {
 
 
 /**
- * Uploads a file to the Gemini API using the resumable REST endpoint.
- * This is a more robust method for handling larger files.
+ * Uploads a file to the Gemini API using resumable upload through proxy.
+ * This method works better with proxy servers by keeping all requests proxied.
  * @param file The file to upload.
  * @param apiKey Your Google AI API key.
  * @returns A promise that resolves with the file metadata once the file is 'ACTIVE'.
  */
 async function uploadFileWithRest(file: File, apiKey: string): Promise<any> {
-    // Step 1: Initiate a resumable upload to get a unique session URI.
-    // This uses the /upload/ prefix and uploadType=resumable query parameter.
-    const resumableInitResponse = await makeGeminiRequest('/upload/v1beta/files?uploadType=resumable', {
-        method: 'POST',
-        headers: { 
-            'Content-Type': 'application/json; charset=UTF-8',
-        },
-        body: JSON.stringify({
-            file: {
-                displayName: file.name,
-                mimeType: file.type
-            }
-        }),
-    }, apiKey);
-
-    if (!resumableInitResponse.ok) {
-        throw new Error(`Failed to initiate file upload session: ${await resumableInitResponse.text()}`);
-    }
-
-    const uploadUri = resumableInitResponse.headers.get('Location');
-    if (!uploadUri) {
-        throw new Error('Failed to get upload URI from server.');
-    }
-
-    // For large file uploads, use the original Google URI directly (not through proxy)
-    // The CORS issue is typically only with the initial request, not the upload URI
-    console.log('Original upload URI:', uploadUri);
-    console.log('Using direct upload URI for large file');
-
-    // Step 2: Upload the raw file bytes to the received session URI.
-    console.log('Starting file upload, size:', file.size, 'bytes');
+    console.log('Starting file upload with proxied resumable method, size:', file.size, 'bytes');
     
-    let uploadResponse;
     try {
-        uploadResponse = await fetch(uploadUri, {
+        // Step 1: Initiate a resumable upload session through proxy
+        const resumableInitResponse = await makeGeminiRequest('/upload/v1beta/files?uploadType=resumable', {
             method: 'POST',
-            headers: { 'Content-Type': file.type },
+            headers: { 
+                'Content-Type': 'application/json; charset=UTF-8',
+            },
+            body: JSON.stringify({
+                file: {
+                    displayName: file.name,
+                    mimeType: file.type
+                }
+            }),
+        }, apiKey);
+
+        console.log('Resumable init response status:', resumableInitResponse.status);
+        
+        if (!resumableInitResponse.ok) {
+            const errorText = await resumableInitResponse.text();
+            console.error('Failed to initiate upload session:', {
+                status: resumableInitResponse.status,
+                statusText: resumableInitResponse.statusText,
+                error: errorText
+            });
+            throw new Error(`Failed to initiate upload session (${resumableInitResponse.status}): ${errorText}`);
+        }
+
+        const uploadUri = resumableInitResponse.headers.get('Location');
+        if (!uploadUri) {
+            throw new Error('Failed to get upload URI from server.');
+        }
+
+        console.log('Got upload URI:', uploadUri);
+
+        // Step 2: Upload the file bytes through our proxy
+        // Extract the path from the upload URI to proxy it
+        const uploadUrl = new URL(uploadUri);
+        const uploadPath = uploadUrl.pathname + uploadUrl.search;
+        
+        console.log('Uploading file through proxy, path:', uploadPath);
+        
+        const uploadResponse = await makeGeminiRequest(uploadPath, {
+            method: 'POST',
+            headers: { 
+                'Content-Type': file.type,
+            },
             body: file,
-        });
+        }, apiKey);
 
         console.log('Upload response status:', uploadResponse.status);
         
         if (!uploadResponse.ok) {
             const errorText = await uploadResponse.text();
-            console.error('Upload failed with status:', uploadResponse.status, 'Error:', errorText);
-            throw new Error(`Failed to upload file bytes (${uploadResponse.status}): ${errorText}`);
+            console.error('File upload failed:', {
+                status: uploadResponse.status,
+                statusText: uploadResponse.statusText,
+                error: errorText,
+                uploadPath: uploadPath
+            });
+            throw new Error(`Failed to upload file (${uploadResponse.status}): ${errorText}`);
         }
+
+        // Step 3: Get the uploaded file metadata
+        const uploadedFileMetadata = await uploadResponse.json();
+        console.log('Upload response:', uploadedFileMetadata);
+
+        // Step 4: Poll the file's status until it's 'ACTIVE'
+        if (uploadedFileMetadata?.state === 'ACTIVE') {
+            return uploadedFileMetadata;
+        }
+        
+        const fileName = uploadedFileMetadata.name;
+        if (!fileName) {
+            throw new Error('Failed to get file name from upload response');
+        }
+        
+        return pollFileState(fileName, apiKey);
+        
     } catch (error) {
-        console.error('Upload fetch error:', error);
+        console.error('Upload error:', error);
         if (error instanceof TypeError && error.message.includes('Failed to fetch')) {
             throw new Error('Network error during file upload. This might be due to file size or network timeout.');
         }
         throw error;
     }
-
-    // Step 3: The response from the upload contains the final file metadata.
-    // The response is the File resource itself (not nested).
-    const uploadedFileMetadata = await uploadResponse.json();
-    console.log('Upload response:', uploadedFileMetadata);
-
-    // Step 4: Poll the file's status until it's 'ACTIVE' and ready for use.
-    if (uploadedFileMetadata?.state === 'ACTIVE') {
-        return uploadedFileMetadata;
-    }
-    // If it's still processing, start polling.
-    const fileName = uploadedFileMetadata.name || uploadedFileMetadata.file?.name;
-    if (!fileName) {
-        throw new Error('Failed to get file name from upload response');
-    }
-    return pollFileState(fileName, apiKey);
 }
 
 
