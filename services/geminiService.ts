@@ -191,7 +191,7 @@ async function uploadFileWithRest(file: File, apiKey: string): Promise<any> {
             console.log('Network error detected, file size:', (file.size / (1024 * 1024)).toFixed(2), 'MB');
             
             // For large files, try multipart first, then direct API
-            if (file.size > 200 * 1024 * 1024) { // 200MB
+            if (file.size > 50 * 1024 * 1024) { // 50MB - adjusted based on actual API limits
                 console.log('Large file detected, trying multipart first...');
                 try {
                     return await uploadFileWithMultipart(file, apiKey);
@@ -216,7 +216,7 @@ async function uploadFileWithRest(file: File, apiKey: string): Promise<any> {
         
         // If all methods fail, provide a helpful error message
         if (error.message.includes('File too large')) {
-            throw new Error('حجم ملف الفيديو كبير جدًا (أكثر من 400 ميجابايت). حاول استخدام ملف أصغر أو ضغط الفيديو.');
+            throw new Error('حجم ملف الفيديو كبير جدًا (أكثر من 50 ميجابايت). حاول ضغط الفيديو إلى حجم أصغر.');
         }
         
         throw error;
@@ -232,7 +232,7 @@ async function uploadFileWithDirectAPI(file: File, apiKey: string): Promise<any>
     
     try {
         // For very large files, we'll use a different approach
-        if (file.size > 400 * 1024 * 1024) { // 400MB
+        if (file.size > 50 * 1024 * 1024) { // 50MB - more conservative based on actual API limits
             throw new Error('File too large for direct API upload');
         }
         
@@ -407,7 +407,13 @@ ${contextSentence}
     }
     if (apiErrorMessage.includes('413') || apiErrorMessage.includes('Too Large')) {
         const fileSizeMB = videoFile.size ? (videoFile.size / (1024 * 1024)).toFixed(2) : 'غير معروف';
-        throw new Error(`حجم ملف الفيديو كبير جدًا (${fileSizeMB} ميجابايت). الحد الأقصى المدعوم هو حوالي 500 ميجابايت. حاول ضغط الفيديو أو استخدام ملف أصغر.`);
+        
+        // For files under 100MB, this might be a different issue
+        if (videoFile.size && videoFile.size < 100 * 1024 * 1024) {
+            throw new Error(`خطأ في رفع الملف (${fileSizeMB} ميجابايت). قد تكون هناك مشكلة مؤقتة في الخدمة أو تنسيق الفيديو غير مدعوم. حاول مرة أخرى أو استخدم تنسيق MP4.`);
+        }
+        
+        throw new Error(`حجم ملف الفيديو كبير جدًا (${fileSizeMB} ميجابايت). الحد الأقصى المدعوم هو حوالي 50 ميجابايت للاستقرار الأمثل. حاول ضغط الفيديو أو استخدام ملف أصغر.`);
     }
 
     const userFriendlyMessage = `فشل الحصول على التفريغ من Gemini API. قد لا يتمكن النموذج من معالجة هذا الفيديو. السبب: ${apiErrorMessage}`;
