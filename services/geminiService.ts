@@ -4,6 +4,19 @@ import { GoogleGenAI } from "@google/genai";
 import { Metadata } from "../components/VideoTranscriptionCard";
 
 /**
+ * Gets the appropriate API base URL for the current environment
+ * In development, uses the Vite proxy. In production, uses the direct Google API URL.
+ */
+function getApiBaseUrl(): string {
+    // Check if we're in development (Vite dev server)
+    if (typeof window !== 'undefined' && window.location.hostname === 'localhost') {
+        return '/api/generativelanguage';
+    }
+    // In production, use the direct Google API URL
+    return 'https://generativelanguage.googleapis.com';
+}
+
+/**
  * Polls the Gemini API to check the state of a file.
  * Resolves with the file metadata once the file state is 'ACTIVE'.
  * Rejects if the file state becomes 'FAILED'.
@@ -12,7 +25,7 @@ import { Metadata } from "../components/VideoTranscriptionCard";
  * @returns A promise that resolves with the active file metadata.
  */
 async function pollFileState(fileName: string, apiKey: string): Promise<any> {
-    const fileApiUrl = `/api/generativelanguage/v1beta/${fileName}`;
+    const fileApiUrl = `${getApiBaseUrl()}/v1beta/${fileName}`;
     
     // This is a simplified polling loop. For a production app, you might want a timeout.
     // eslint-disable-next-line no-constant-condition
@@ -56,7 +69,7 @@ async function pollFileState(fileName: string, apiKey: string): Promise<any> {
 async function uploadFileWithRest(file: File, apiKey: string): Promise<any> {
     // Step 1: Initiate a resumable upload to get a unique session URI.
     // This uses the /upload/ prefix and uploadType=resumable query parameter.
-    const resumableInitResponse = await fetch(`/api/generativelanguage/upload/v1beta/files?uploadType=resumable`, {
+    const resumableInitResponse = await fetch(`${getApiBaseUrl()}/upload/v1beta/files?uploadType=resumable`, {
         method: 'POST',
         headers: { 
             'Content-Type': 'application/json; charset=UTF-8',
@@ -198,7 +211,7 @@ ${contextSentence}
     // If an uploaded file resource exists and an error occurred, try to delete it via REST API.
     if (uploadedFile?.name) {
         try {
-            await fetch(`/api/generativelanguage/v1beta/${uploadedFile.name}`, {
+            await fetch(`${getApiBaseUrl()}/v1beta/${uploadedFile.name}`, {
                 method: 'DELETE',
                 headers: { 'x-goog-api-key': apiKey }
             });
