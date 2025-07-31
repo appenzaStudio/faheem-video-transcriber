@@ -175,15 +175,68 @@ async function uploadFileWithRest(file: File, apiKey: string): Promise<any> {
     } catch (error) {
         console.error('Resumable upload error:', error);
         
-        // If the error is related to missing Location header, try multipart upload as fallback
+        // Try different fallback methods based on the error type
         if (error.message.includes('Failed to get upload URI from server')) {
             console.log('Falling back to multipart upload method...');
-            return uploadFileWithMultipart(file, apiKey);
+            try {
+                return await uploadFileWithMultipart(file, apiKey);
+            } catch (multipartError) {
+                console.log('Multipart upload also failed, trying direct API method...');
+                return await uploadFileWithDirectAPI(file, apiKey);
+            }
+        }
+        
+        if (error.message.includes('Network error') || error.message.includes('Failed to fetch')) {
+            console.log('Network error detected, trying direct API method...');
+            try {
+                return await uploadFileWithDirectAPI(file, apiKey);
+            } catch (directAPIError) {
+                console.log('Direct API method also failed, trying multipart...');
+                return await uploadFileWithMultipart(file, apiKey);
+            }
         }
         
         if (error instanceof TypeError && error.message.includes('Failed to fetch')) {
             throw new Error('Network error during file upload. This might be due to file size or network timeout.');
         }
+        throw error;
+    }
+}
+
+/**
+ * Simplified upload method that uses direct API calls with better error handling.
+ * Used as a fallback when the main upload methods fail.
+ */
+async function uploadFileWithDirectAPI(file: File, apiKey: string): Promise<any> {
+    console.log('Starting direct API upload method, size:', file.size, 'bytes');
+    
+    try {
+        // For very large files, we'll use a different approach
+        if (file.size > 100 * 1024 * 1024) { // 100MB
+            throw new Error('File too large for direct API upload');
+        }
+        
+        // Use a simple media upload endpoint
+        const formData = new FormData();
+        formData.append('file', file);
+        
+        const response = await fetch(`https://generativelanguage.googleapis.com/upload/v1beta/files?key=${apiKey}`, {
+            method: 'POST',
+            body: formData,
+        });
+        
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`Direct API upload failed: ${errorText}`);
+        }
+        
+        const result = await response.json();
+        console.log('Direct API upload successful:', result);
+        
+        return result;
+        
+    } catch (error) {
+        console.error('Direct API upload error:', error);
         throw error;
     }
 }

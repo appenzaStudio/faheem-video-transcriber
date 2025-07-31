@@ -1,10 +1,9 @@
-// Disable body parsing for file uploads
+// Disable body parsing completely for file uploads
 export const config = {
   api: {
-    bodyParser: {
-      sizeLimit: '500mb',
-    },
+    bodyParser: false,
   },
+  maxDuration: 300, // 5 minutes
 }
 
 export default async function handler(req, res) {
@@ -61,17 +60,23 @@ export default async function handler(req, res) {
     let body = undefined;
     if (req.method !== 'GET' && req.method !== 'HEAD') {
       if (req.headers['content-type']?.includes('application/json')) {
-        // For JSON requests, stringify the body
-        body = JSON.stringify(req.body);
+        // For JSON requests, read and parse the body
+        const chunks = [];
+        for await (const chunk of req) {
+          chunks.push(chunk);
+        }
+        const rawBody = Buffer.concat(chunks).toString();
+        body = rawBody;
         console.log('Using JSON body, size:', body.length);
         console.log('JSON body preview:', body.substring(0, 200) + '...');
       } else {
-        // For file uploads, use the raw body
-        body = req.body;
-        console.log('Using raw body for file upload, type:', typeof body);
-        if (body && body.length !== undefined) {
-          console.log('Body size:', body.length);
+        // For file uploads, stream the raw body
+        const chunks = [];
+        for await (const chunk of req) {
+          chunks.push(chunk);
         }
+        body = Buffer.concat(chunks);
+        console.log('Using raw body for file upload, size:', body.length);
       }
     }
 
