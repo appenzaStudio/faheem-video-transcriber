@@ -8,12 +8,22 @@ import { Metadata } from "../components/VideoTranscriptionCard";
  * In development, uses the Vite proxy. In production, uses the direct Google API URL.
  */
 function getApiBaseUrl(): string {
-    // Check if we're in development (Vite dev server)
-    if (typeof window !== 'undefined' && window.location.hostname === 'localhost') {
-        return '/api/generativelanguage';
-    }
-    // In production, use the direct Google API URL
-    return 'https://generativelanguage.googleapis.com';
+    // Always use the proxy endpoint for consistency
+    return '/api/gemini-proxy';
+}
+
+/**
+ * Makes a proxied request to the Gemini API
+ */
+async function makeGeminiRequest(path: string, options: RequestInit, apiKey: string): Promise<Response> {
+    return fetch(getApiBaseUrl(), {
+        ...options,
+        headers: {
+            ...options.headers,
+            'x-goog-api-key': apiKey,
+            'x-gemini-path': path,
+        },
+    });
 }
 
 /**
@@ -25,7 +35,7 @@ function getApiBaseUrl(): string {
  * @returns A promise that resolves with the active file metadata.
  */
 async function pollFileState(fileName: string, apiKey: string): Promise<any> {
-    const fileApiUrl = `${getApiBaseUrl()}/v1beta/${fileName}`;
+    const filePath = `/v1beta/${fileName}`;
     
     // This is a simplified polling loop. For a production app, you might want a timeout.
     // eslint-disable-next-line no-constant-condition
@@ -33,11 +43,9 @@ async function pollFileState(fileName: string, apiKey: string): Promise<any> {
         // Wait for 5 seconds before checking the status again.
         await new Promise(resolve => setTimeout(resolve, 5000)); 
 
-        const getResponse = await fetch(fileApiUrl, {
-            headers: {
-                'x-goog-api-key': apiKey,
-            }
-        });
+        const getResponse = await makeGeminiRequest(filePath, {
+            method: 'GET',
+        }, apiKey);
         if (!getResponse.ok) {
             console.error("Polling for file status failed:", await getResponse.text());
             // Continue polling, assuming it might be a transient network issue.
@@ -69,11 +77,10 @@ async function pollFileState(fileName: string, apiKey: string): Promise<any> {
 async function uploadFileWithRest(file: File, apiKey: string): Promise<any> {
     // Step 1: Initiate a resumable upload to get a unique session URI.
     // This uses the /upload/ prefix and uploadType=resumable query parameter.
-    const resumableInitResponse = await fetch(`${getApiBaseUrl()}/upload/v1beta/files?uploadType=resumable`, {
+    const resumableInitResponse = await makeGeminiRequest('/upload/v1beta/files?uploadType=resumable', {
         method: 'POST',
         headers: { 
             'Content-Type': 'application/json; charset=UTF-8',
-            'x-goog-api-key': apiKey,
         },
         body: JSON.stringify({
             file: {
@@ -81,7 +88,7 @@ async function uploadFileWithRest(file: File, apiKey: string): Promise<any> {
                 mimeType: file.type
             }
         }),
-    });
+    }, apiKey);
 
     if (!resumableInitResponse.ok) {
         throw new Error(`Failed to initiate file upload session: ${await resumableInitResponse.text()}`);
@@ -211,10 +218,9 @@ ${contextSentence}
     // If an uploaded file resource exists and an error occurred, try to delete it via REST API.
     if (uploadedFile?.name) {
         try {
-            await fetch(`${getApiBaseUrl()}/v1beta/${uploadedFile.name}`, {
+            await makeGeminiRequest(`/v1beta/${uploadedFile.name}`, {
                 method: 'DELETE',
-                headers: { 'x-goog-api-key': apiKey }
-            });
+            }, apiKey);
             console.log(`Cleaned up failed upload: ${uploadedFile.displayName || uploadedFile.name}`);
         } catch (deleteError) {
             console.error(`Failed to delete orphaned file ${uploadedFile.name}:`, deleteError);
