@@ -92,6 +92,16 @@ export default async function handler(req, res) {
       console.log('Google API response status:', response.status);
       console.log('Response headers:', Object.fromEntries(response.headers.entries()));
       
+      // Forward all important headers from Google API response
+      const headersToForward = ['location', 'content-type', 'content-length', 'cache-control', 'etag'];
+      headersToForward.forEach(headerName => {
+        const headerValue = response.headers.get(headerName);
+        if (headerValue) {
+          res.setHeader(headerName, headerValue);
+          console.log(`Forwarding header ${headerName}:`, headerValue);
+        }
+      });
+      
       // Handle different response types safely
       const contentType = response.headers.get('content-type') || 'application/json';
       
@@ -105,14 +115,12 @@ export default async function handler(req, res) {
             const data = JSON.parse(responseText);
             res.status(response.status).json(data);
           } else {
-            // Empty response
-            console.log('Empty JSON response received');
-            res.status(response.status).json({});
+            // Empty response - this is normal for resumable upload initiation
+            console.log('Empty JSON response received (normal for resumable upload)');
+            res.status(response.status).end();
           }
         } else {
-          res.status(response.status)
-            .setHeader('Content-Type', contentType)
-            .send(responseText);
+          res.status(response.status).send(responseText);
         }
       } catch (parseError) {
         console.error('Response parsing error:', parseError.message);

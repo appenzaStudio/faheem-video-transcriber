@@ -104,8 +104,19 @@ async function uploadFileWithRest(file: File, apiKey: string): Promise<any> {
             throw new Error(`Failed to initiate upload session (${resumableInitResponse.status}): ${errorText}`);
         }
 
+        // Debug: Log all response headers
+        console.log('All resumable init response headers:');
+        for (const [key, value] of resumableInitResponse.headers.entries()) {
+            console.log(`  ${key}: ${value}`);
+        }
+        
         const uploadUri = resumableInitResponse.headers.get('Location');
+        console.log('Location header value:', uploadUri);
+        
         if (!uploadUri) {
+            console.error('Missing Location header in resumable upload response');
+            console.error('Response status:', resumableInitResponse.status);
+            console.error('Response headers:', Object.fromEntries(resumableInitResponse.headers.entries()));
             throw new Error('Failed to get upload URI from server.');
         }
 
