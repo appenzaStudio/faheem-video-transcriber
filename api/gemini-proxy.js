@@ -64,10 +64,14 @@ export default async function handler(req, res) {
         // For JSON requests, stringify the body
         body = JSON.stringify(req.body);
         console.log('Using JSON body, size:', body.length);
+        console.log('JSON body preview:', body.substring(0, 200) + '...');
       } else {
         // For file uploads, use the raw body
         body = req.body;
-        console.log('Using raw body for file upload');
+        console.log('Using raw body for file upload, type:', typeof body);
+        if (body && body.length !== undefined) {
+          console.log('Body size:', body.length);
+        }
       }
     }
 
@@ -86,18 +90,37 @@ export default async function handler(req, res) {
       clearTimeout(timeoutId);
 
       console.log('Google API response status:', response.status);
+      console.log('Response headers:', Object.fromEntries(response.headers.entries()));
       
-      // Handle different response types
+      // Handle different response types safely
       const contentType = response.headers.get('content-type') || 'application/json';
       
-      if (contentType.includes('application/json')) {
-        const data = await response.json();
-        res.status(response.status).json(data);
-      } else {
-        const data = await response.text();
+      // Read response text once
+      const responseText = await response.text();
+      console.log('Response text length:', responseText.length);
+      
+      try {
+        if (contentType.includes('application/json')) {
+          if (responseText.trim()) {
+            const data = JSON.parse(responseText);
+            res.status(response.status).json(data);
+          } else {
+            // Empty response
+            console.log('Empty JSON response received');
+            res.status(response.status).json({});
+          }
+        } else {
+          res.status(response.status)
+            .setHeader('Content-Type', contentType)
+            .send(responseText);
+        }
+      } catch (parseError) {
+        console.error('Response parsing error:', parseError.message);
+        console.error('Raw response text:', responseText.substring(0, 500) + '...');
+        
         res.status(response.status)
-          .setHeader('Content-Type', contentType)
-          .send(data);
+          .setHeader('Content-Type', 'text/plain')
+          .send(responseText);
       }
       
     } catch (fetchError) {
