@@ -76,6 +76,7 @@ async function pollFileState(fileName: string, apiKey: string): Promise<any> {
  */
 async function uploadFileWithRest(file: File, apiKey: string): Promise<any> {
     console.log('Starting file upload with proxied resumable method, size:', file.size, 'bytes');
+    console.log('File size in MB:', (file.size / (1024 * 1024)).toFixed(2), 'MB');
     
     try {
         // Step 1: Initiate a resumable upload session through proxy
@@ -187,18 +188,37 @@ async function uploadFileWithRest(file: File, apiKey: string): Promise<any> {
         }
         
         if (error.message.includes('Network error') || error.message.includes('Failed to fetch')) {
-            console.log('Network error detected, trying direct API method...');
-            try {
-                return await uploadFileWithDirectAPI(file, apiKey);
-            } catch (directAPIError) {
-                console.log('Direct API method also failed, trying multipart...');
-                return await uploadFileWithMultipart(file, apiKey);
+            console.log('Network error detected, file size:', (file.size / (1024 * 1024)).toFixed(2), 'MB');
+            
+            // For large files, try multipart first, then direct API
+            if (file.size > 200 * 1024 * 1024) { // 200MB
+                console.log('Large file detected, trying multipart first...');
+                try {
+                    return await uploadFileWithMultipart(file, apiKey);
+                } catch (multipartError) {
+                    console.log('Multipart also failed, trying direct API...');
+                    return await uploadFileWithDirectAPI(file, apiKey);
+                }
+            } else {
+                console.log('Smaller file, trying direct API first...');
+                try {
+                    return await uploadFileWithDirectAPI(file, apiKey);
+                } catch (directAPIError) {
+                    console.log('Direct API method also failed, trying multipart...');
+                    return await uploadFileWithMultipart(file, apiKey);
+                }
             }
         }
         
         if (error instanceof TypeError && error.message.includes('Failed to fetch')) {
             throw new Error('Network error during file upload. This might be due to file size or network timeout.');
         }
+        
+        // If all methods fail, provide a helpful error message
+        if (error.message.includes('File too large')) {
+            throw new Error('حجم ملف الفيديو كبير جدًا (أكثر من 400 ميجابايت). حاول استخدام ملف أصغر أو ضغط الفيديو.');
+        }
+        
         throw error;
     }
 }
@@ -212,7 +232,7 @@ async function uploadFileWithDirectAPI(file: File, apiKey: string): Promise<any>
     
     try {
         // For very large files, we'll use a different approach
-        if (file.size > 100 * 1024 * 1024) { // 100MB
+        if (file.size > 400 * 1024 * 1024) { // 400MB
             throw new Error('File too large for direct API upload');
         }
         
@@ -386,7 +406,8 @@ ${contextSentence}
         throw new Error("توقف التفريغ بسبب إعدادات السلامة. قد يكون المحتوى غير لائق.");
     }
     if (apiErrorMessage.includes('413') || apiErrorMessage.includes('Too Large')) {
-         throw new Error("حجم ملف الفيديو كبير جدًا بالنسبة للطلب المباشر. حاول استخدام ملف أصغر.");
+        const fileSizeMB = videoFile.size ? (videoFile.size / (1024 * 1024)).toFixed(2) : 'غير معروف';
+        throw new Error(`حجم ملف الفيديو كبير جدًا (${fileSizeMB} ميجابايت). الحد الأقصى المدعوم هو حوالي 500 ميجابايت. حاول ضغط الفيديو أو استخدام ملف أصغر.`);
     }
 
     const userFriendlyMessage = `فشل الحصول على التفريغ من Gemini API. قد لا يتمكن النموذج من معالجة هذا الفيديو. السبب: ${apiErrorMessage}`;
